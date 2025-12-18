@@ -1,0 +1,141 @@
+# PlatformIO
+.pio
+.pioenvs
+.piodepaths
+.pioinit
+.piobuild
+.piorun
+.platformio/
+
+# Build directories
+build/
+bin/
+*.elf
+*.bin
+*.map
+*.asm
+*.lst
+*.sym
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
+coverage/
+htmlcov/
+
+# Test results
+test-reports/
+*.xml
+*.log
+
+# Arduino specific
+lib_deps/
+public/
+src_version.h
+
+# Compiled test executables
+*_test
+*_unittest
+test
+
+# Generated files
+AutoConfig.h
+Arduino.h.gch
+preproc
+
+# Backup files
+*.bak
+*.backup
+
+# ESP32 specific
+firmware.bin
+firmware.elf
+partitions.bin
+bootloader.bin
+
+# LittleFS data files
+data/
+*.gz
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Documentation
+docs/build/
+site/
+
+# Network captures
+*.pcap
+*.pcapng
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+!.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Cache directories
+.cache/
+.npm/
+.parcel-cache/
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage.info
+coverage-summary.json
+lcov.info
+
+# Static analysis
+*.clang-tidy
+*.cppcheck
+pvs-studio.log
+
+# Test artifacts
+*.test
+test_results/
+
+# Backup configurations
+*.conf.bak
+*.config.bak
+settings.json.bak
+
+# Documentation builds
+site/
+docs/_build/
