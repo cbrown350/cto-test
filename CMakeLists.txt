@@ -41,6 +41,11 @@ set(LIB_SOURCES
     lib/Logger.cpp
     lib/WifiController.cpp
     lib/SunriseSunset.cpp
+    lib/MockEmailManager.cpp
+    lib/MockTelegramManager.cpp
+    lib/MockSystemMetrics.cpp
+    lib/MockPushbuttonController.cpp
+    lib/MockAPIRequestQueue.cpp
 )
 
 set(TEST_UTILS_SOURCES
@@ -76,6 +81,12 @@ add_coop_test(settings_manager_test test/test_desktop/test_settings_manager.cpp)
 add_coop_test(logger_test test/test_desktop/test_logger.cpp)
 add_coop_test(wifi_controller_test test/test_desktop/test_wifi_controller.cpp)
 add_coop_test(sunrise_sunset_test test/test_desktop/test_sunrise_sunset.cpp)
+add_coop_test(email_manager_test test/test_desktop/test_email_manager.cpp)
+add_coop_test(telegram_manager_test test/test_desktop/test_telegram_manager.cpp)
+add_coop_test(system_metrics_test test/test_desktop/test_system_metrics.cpp)
+add_coop_test(pushbutton_controller_test test/test_desktop/test_pushbutton_controller.cpp)
+add_coop_test(api_request_queue_test test/test_desktop/test_api_request_queue.cpp)
+add_coop_test(monitoring_integration_test test/test_desktop/test_monitoring_integration.cpp)
 
 # Add test targets
 add_test(NAME SensorManagerTest COMMAND sensor_manager_test)
@@ -85,9 +96,15 @@ add_test(NAME SettingsManagerTest COMMAND settings_manager_test)
 add_test(NAME LoggerTest COMMAND logger_test)
 add_test(NAME WifiControllerTest COMMAND wifi_controller_test)
 add_test(NAME SunriseSunsetTest COMMAND sunrise_sunset_test)
+add_test(NAME EmailManagerTest COMMAND email_manager_test)
+add_test(NAME TelegramManagerTest COMMAND telegram_manager_test)
+add_test(NAME SystemMetricsTest COMMAND system_metrics_test)
+add_test(NAME PushbuttonControllerTest COMMAND pushbutton_controller_test)
+add_test(NAME APIRequestQueueTest COMMAND api_request_queue_test)
+add_test(NAME MonitoringIntegrationTest COMMAND monitoring_integration_test)
 
 # Custom test target
-add_custom_target(test
+add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
     DEPENDS
         sensor_manager_test
@@ -97,6 +114,12 @@ add_custom_target(test
         logger_test
         wifi_controller_test
         sunrise_sunset_test
+        email_manager_test
+        telegram_manager_test
+        system_metrics_test
+        pushbutton_controller_test
+        api_request_queue_test
+        monitoring_integration_test
 )
 
 # Coverage target
@@ -116,6 +139,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
                 logger_test
                 wifi_controller_test
                 sunrise_sunset_test
+                email_manager_test
+                telegram_manager_test
+                system_metrics_test
+                pushbutton_controller_test
+                api_request_queue_test
+                monitoring_integration_test
             COMMENT "Generating code coverage report (coverage/index.html)"
         )
     else()
@@ -133,6 +162,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
                 logger_test
                 wifi_controller_test
                 sunrise_sunset_test
+                email_manager_test
+                telegram_manager_test
+                system_metrics_test
+                pushbutton_controller_test
+                api_request_queue_test
+                monitoring_integration_test
             COMMENT "Generating code coverage report"
         )
     endif()
@@ -147,5 +182,11 @@ install(TARGETS
     logger_test
     wifi_controller_test
     sunrise_sunset_test
+    email_manager_test
+    telegram_manager_test
+    system_metrics_test
+    pushbutton_controller_test
+    api_request_queue_test
+    monitoring_integration_test
     RUNTIME DESTINATION bin
 )
