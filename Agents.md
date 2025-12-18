@@ -1459,6 +1459,281 @@ cd web && npm run dev
 
 ## Testing & Quality Assurance
 
+### Overview
+
+The Coop Controller project implements a comprehensive unit testing framework that supports both desktop and embedded testing environments. The framework is designed to provide high test coverage for all critical components while being memory-efficient for ESP32 constraints.
+
+### Testing Framework Components
+
+#### 1. **Mock Classes for Hardware Abstraction**
+
+**MockSensorManager**
+- Simulates Dallas temperature sensors and water flow meters
+- Supports multiple sensor configurations and failure scenarios
+- Provides temperature generation, gradient simulation, and pulse counting
+- Enables testing of temperature-based control logic without hardware dependencies
+
+**MockPumpController**
+- Simulates pump relay control and flow monitoring
+- Supports AUTO, MANUAL_ON, MANUAL_OFF, and DISABLED modes
+- Implements freeze protection logic simulation
+- Tracks pump statistics, cycle counts, and fault detection
+
+**MockLightController**
+- Simulates PWM-based light control with brightness transitions
+- Supports time-based scheduling and sunrise/sunset calculations
+- Implements sine-wave transitions for gradual lighting changes
+- Tracks lighting usage statistics and manual overrides
+
+**MockSettingsManager**
+- Simulates persistent configuration storage using in-memory storage for tests
+- Supports JSON serialization/deserialization for testing
+- Provides setting validation and change tracking
+- Enables testing of configuration management without filesystem dependencies
+
+**MockWebServer**
+- Simulates HTTP request/response handling
+- Supports route registration and middleware testing
+- Enables testing of REST API endpoints without network dependencies
+- Provides client simulation for comprehensive API testing
+
+**MockWiFi**
+- Simulates WiFi connection management and network scanning
+- Supports access point mode simulation
+- Enables testing of network connectivity logic without actual WiFi hardware
+- Provides connection state monitoring and event simulation
+
+#### 2. **Test Utilities**
+
+**TestTimeUtils**
+- Provides time simulation for testing time-dependent functionality
+- Supports time advancement, condition waiting, and timestamp comparison
+- Enables testing of timeout and scheduling logic
+
+**TestTemperatureUtils**
+- Generates realistic temperature values within DS18B20 sensor range
+- Supports temperature sequences, daily cycles, and conversion utilities
+- Provides temperature validation and safety checks
+
+**TestFlowRateUtils**
+- Simulates water flow rates and pulse generation
+- Supports flow rate sequences and validation utilities
+- Enables testing of pump flow detection logic
+
+**TestAssertUtils**
+- Provides embedded-compatible assertion macros
+- Supports both Google Test and Unity Test frameworks
+- Offers consistent assertion interface across platforms
+
+**TestMemoryUtils**
+- Manages test heap initialization and tracking
+- Provides memory leak detection and buffer management utilities
+- Ensures memory-efficient testing for embedded constraints
+
+**TestStringUtils**
+- Generates test data for network configurations, settings, and API responses
+- Provides JSON templates for API testing
+- Supports URL generation and path creation utilities
+
+#### 3. **Test Framework Structure**
+
+```
+test/
+├── test_common/           # Shared test infrastructure
+│   ├── CommonTestFixture.h
+│   ├── CommonTestFixture.cpp
+│   ├── test_main.cpp      # Embedded test entry point
+│   └── 
+├── test_desktop/          # Google Test framework tests
+│   ├── test_main.cpp      # Desktop test entry point
+│   ├── SensorManagerTest.cpp
+│   ├── PumpControllerTest.cpp
+│   └── LightControllerTest.cpp
+└── test_embedded/         # Unity Test framework tests
+    └── test_main.cpp
+```
+
+#### 4. **Build Configurations**
+
+**Desktop Testing (native)**
+- Uses Google Test framework for comprehensive unit testing
+- Runs on development machine with full debugging capabilities
+- Supports advanced test features like fixtures, parameterized tests, and mocking
+- Command: `pio run --environment native_desktop` or `make test`
+
+**Embedded Testing (ESP32)**
+- Uses Unity Test framework optimized for embedded systems
+- Runs directly on ESP32 hardware or emulator
+- Memory-efficient implementation suitable for ESP32 constraints
+- Command: `pio run --environment esp32_test` and upload to ESP32
+
+### Testing Procedures
+
+#### Running Desktop Tests
+
+```bash
+# Build and run all desktop tests
+pio run --environment native_desktop
+make test
+
+# Run specific test suite
+./bin/sensor_manager_test
+./bin/pump_controller_test  
+./bin/light_controller_test
+
+# Run tests with coverage
+make coverage
+```
+
+#### Running Embedded Tests
+
+```bash
+# Build test firmware for ESP32
+pio run --environment esp32_test
+
+# Upload to ESP32 and monitor serial output
+pio device monitor
+
+# The embedded tests will run automatically on ESP32 startup
+```
+
+#### Test Categories
+
+**Component Unit Tests**
+- SensorManager: Temperature reading, water meter detection, sensor failure scenarios
+- PumpController: Mode switching, freeze protection, fault detection, statistics tracking
+- LightController: Brightness control, time-based scheduling, transitions, manual overrides
+- SettingsManager: Configuration loading/saving, validation, JSON serialization
+- WebServer: Route handling, request processing, response generation
+- WiFi: Connection management, network scanning, state monitoring
+
+**Integration Tests**
+- Sensor-to-pump control flow testing
+- Temperature threshold crossing scenarios
+- Pump fault detection with sensor data
+- Light scheduling with sunrise/sunset calculations
+- Settings persistence with component behavior
+
+**Edge Case Tests**
+- Sensor failure and recovery scenarios
+- Network connectivity issues
+- Memory constraints and resource exhaustion
+- Invalid configuration handling
+- Hardware constraint simulation
+
+### Test Development Guidelines
+
+#### Writing New Tests
+
+1. **Follow C++ Best Practices**
+   - Use RAII (Resource Acquisition Is Initialization) for resource management
+   - Implement proper dependency injection for testability
+   - Follow single responsibility principle for test functions
+
+2. **Test Structure**
+   ```cpp
+   class ComponentNameTest : public CoopControllerTest {
+   protected:
+       void SetUp() override {
+           CoopControllerTest::SetUp();
+           component = new MockComponent();
+       }
+       
+       void TearDown() override {
+           delete component;
+           CoopControllerTest::TearDown();
+       }
+   };
+
+   TEST_F(ComponentNameTest, TestScenario) {
+       // Arrange
+       component->setup();
+       
+       // Act
+       component->performAction();
+       
+       // Assert
+       EXPECT_TRUE(component->isInExpectedState());
+   }
+   ```
+
+3. **Mock Usage**
+   - Use mock classes to isolate components under test
+   - Configure mock behavior to simulate real-world scenarios
+   - Verify mock interactions and state changes
+
+4. **Assertions**
+   - Use framework-appropriate assertions (`EXPECT_*` vs `ASSERT_*`)
+   - Provide meaningful failure messages
+   - Validate both success and failure scenarios
+
+#### Test Coverage Goals
+
+- **Critical Path Coverage**: All primary control paths must be tested
+- **Error Handling**: All error conditions and recovery mechanisms
+- **Boundary Conditions**: Edge cases for sensor ranges, timing limits
+- **Integration Points**: Component interaction testing
+- **Resource Management**: Memory usage and cleanup verification
+
+#### Performance Considerations
+
+- **Memory Efficiency**: Minimize heap usage in embedded tests
+- **Execution Time**: Keep individual tests under reasonable time limits
+- **Determinism**: Ensure test results are consistent and reproducible
+- **Resource Cleanup**: Proper cleanup to prevent test interference
+
+### Continuous Integration
+
+The testing framework is designed to integrate with CI/CD pipelines:
+
+- **Desktop Testing**: Automated execution on code commits
+- **Coverage Reporting**: Generate coverage reports for desktop tests
+- **Embedded Testing**: Optional hardware testing in CI environment
+- **Test Result Aggregation**: Consolidated reporting across test environments
+
+### Debugging and Troubleshooting
+
+#### Common Test Issues
+
+1. **Mock Configuration Errors**
+   - Verify mock setup and expectations
+   - Check mock state reset between tests
+   - Validate mock callback registrations
+
+2. **Memory Issues**
+   - Monitor heap usage in embedded tests
+   - Check for memory leaks in mock objects
+   - Verify proper resource cleanup
+
+3. **Timing Issues**
+   - Use TestTimeUtils for deterministic timing
+   - Avoid real-time dependencies in tests
+   - Mock time-sensitive operations
+
+4. **Framework Compatibility**
+   - Ensure consistent assertion usage between frameworks
+   - Check for platform-specific code in tests
+   - Validate test compilation across environments
+
+#### Debug Techniques
+
+- **Verbose Output**: Enable detailed test output with `--gtest_filter=*` flags
+- **Step-by-Step Debugging**: Use debugger breakpoints in desktop tests
+- **Mock Verification**: Enable mock expectations checking
+- **Resource Monitoring**: Track memory usage and cleanup
+
+### Best Practices Summary
+
+1. **Test Isolation**: Each test should be independent and not affect others
+2. **Clear Test Names**: Use descriptive test names that explain the scenario
+3. **Arrange-Act-Assert**: Follow the AAA pattern for test structure
+4. **Coverage Goals**: Aim for high coverage of critical paths
+5. **Performance**: Consider execution time and resource usage
+6. **Documentation**: Document complex test scenarios and edge cases
+7. **Maintainability**: Keep tests simple and easy to understand
+
+This comprehensive testing framework ensures the reliability and maintainability of the Coop Controller system while providing efficient testing capabilities for both desktop development and embedded deployment scenarios.
+
 ### Unit Testing
 
 **C++ Testing:**
