@@ -49,18 +49,43 @@ public:
         bool syslogEnabled = false;
         std::string syslogServer = "";
         uint16_t syslogPort = 514;
+        
+        // Email notification settings
         bool emailEnabled = false;
-        std::string emailServer = "";
-        uint16_t emailPort = 587;
+        bool emailNotificationsEnabled = false;
+        std::string emailSmtpServer = "";
+        uint16_t emailSmtpPort = 587;
+        bool emailSmtpUseTLS = true;
+        std::string emailFromAddress = "";
         std::string emailUsername = "";
         std::string emailPassword = "";
-        std::string emailRecipient = "";
+        std::vector<std::string> emailRecipients;
         
         // Door settings (planned)
         bool doorEnabled = false;
         uint32_t doorOpenTime = 30; // seconds
         uint32_t doorCloseTime = 30; // seconds
         uint32_t doorRetryAttempts = 3;
+        
+        // Telegram settings
+        bool telegramEnabled = false;
+        std::string telegramBotToken = "";
+        std::string telegramChatId = "";
+        
+        // OpenWeather API settings
+        bool openweatherEnabled = false;
+        std::string openweatherApiKey = "";
+        float openweatherLatitude = 0.0f;
+        float openweatherLongitude = 0.0f;
+        
+        // External pushbutton settings
+        bool pushbuttonEnabled = false;
+        uint32_t pushbuttonPin = 34;
+        uint32_t pushbuttonDebounceMs = 50;
+        
+        // System settings
+        bool systemMetricsLogging = false;
+        uint32_t lastRebootReason = 0;
     };
 
     MockSettingsManager() = default;
