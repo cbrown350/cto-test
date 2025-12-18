@@ -100,9 +100,8 @@ private:
     uint8_t manualBrightness_ = 128;
     bool manualOverride_ = false;
     
-    // Time tracking
-    std::chrono::steady_clock::time_point currentTime_;
-    std::chrono::steady_clock::time_point lastTickTime_;
+    // Time tracking (tick-based for deterministic tests)
+    uint64_t simulatedSeconds_ = 0;
     uint32_t currentHour_ = 12;
     uint32_t currentMinute_ = 0;
     uint32_t sunriseHour_ = 6;
@@ -136,6 +135,8 @@ private:
     void updateTiming();
     void notifyStateChange();
     void notifyBrightnessChange(uint8_t brightness);
+
+    std::chrono::steady_clock::time_point now() const;
 };
 
 #endif // MOCK_LIGHT_CONTROLLER_H

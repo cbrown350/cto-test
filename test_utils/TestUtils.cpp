@@ -3,6 +3,10 @@
 #include <sstream>
 #include <functional>
 #include <thread>
+#include <unordered_map>
+#include <mutex>
+#include <cstdlib>
+#include <stdexcept>
 
 // TestTimeUtils implementation
 TestTimeUtils::SimulatedTime& TestTimeUtils::getSimulatedTime() {
@@ -372,6 +376,18 @@ void* TestMemoryUtils::testHeapStart = nullptr;
 size_t TestMemoryUtils::testHeapSize = 0;
 size_t TestMemoryUtils::currentAllocation = 0;
 
+namespace {
+struct AllocationTracker {
+    std::mutex mutex;
+    std::unordered_map<void*, size_t> allocations;
+};
+
+AllocationTracker& getAllocationTracker() {
+    static AllocationTracker tracker;
+    return tracker;
+}
+} // namespace
+
 void TestMemoryUtils::initializeTestHeap(size_t heapSize) {
     testHeapStart = malloc(heapSize);
     testHeapSize = heapSize;
@@ -397,6 +413,10 @@ size_t TestMemoryUtils::getUsedHeap() {
 
 void TestMemoryUtils::resetMemoryTracking() {
     currentAllocation = 0;
+
+    auto& tracker = getAllocationTracker();
+    std::lock_guard<std::mutex> lock(tracker.mutex);
+    tracker.allocations.clear();
 }
 
 size_t TestMemoryUtils::getMemoryAllocated() {
@@ -405,6 +425,49 @@ size_t TestMemoryUtils::getMemoryAllocated() {
 
 bool TestMemoryUtils::hasMemoryLeaks() {
     return currentAllocation > 0;
+}
+
+void* TestMemoryUtils::allocate(size_t size) {
+    if (size == 0) {
+        size = 1;
+    }
+
+    void* ptr = std::malloc(size);
+    if (!ptr) {
+        return nullptr;
+    }
+
+    auto& tracker = getAllocationTracker();
+    {
+        std::lock_guard<std::mutex> lock(tracker.mutex);
+        tracker.allocations[ptr] = size;
+    }
+
+    currentAllocation += size;
+    return ptr;
+}
+
+void TestMemoryUtils::deallocate(void* pointer) {
+    if (!pointer) {
+        return;
+    }
+
+    size_t size = 0;
+    auto& tracker = getAllocationTracker();
+    {
+        std::lock_guard<std::mutex> lock(tracker.mutex);
+        auto it = tracker.allocations.find(pointer);
+        if (it != tracker.allocations.end()) {
+            size = it->second;
+            tracker.allocations.erase(it);
+        }
+    }
+
+    if (size > 0 && currentAllocation >= size) {
+        currentAllocation -= size;
+    }
+
+    std::free(pointer);
 }
 
 std::vector<uint8_t> TestMemoryUtils::createTestBuffer(size_t size, uint8_t fillValue) {

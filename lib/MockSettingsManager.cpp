@@ -131,12 +131,8 @@ bool MockSettingsManager::settingsFileExists() const {
 }
 
 void MockSettingsManager::setSettings(const Settings& settings) {
-    Settings oldSettings = settings_;
     settings_ = settings;
     unsavedChanges_ = true;
-    
-    // Notify for each changed setting
-    // This is simplified for the mock
 }
 
 std::string MockSettingsManager::serializeToJson() const {
@@ -217,6 +213,8 @@ std::vector<std::string> MockSettingsManager::getValidationErrors() const {
 }
 
 bool MockSettingsManager::createBackup(const std::string& filename) {
+    (void)filename;
+
     if (testMode_) {
         // In test mode, just simulate backup creation
         return true;
@@ -227,6 +225,8 @@ bool MockSettingsManager::createBackup(const std::string& filename) {
 }
 
 bool MockSettingsManager::restoreBackup(const std::string& filename) {
+    (void)filename;
+
     if (testMode_) {
         // In test mode, simulate restore
         return true;

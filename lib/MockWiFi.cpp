@@ -2,6 +2,12 @@
 #include <algorithm>
 #include <random>
 
+void MockWiFi::setNextBeginResult(bool success, uint32_t reason) {
+    hasNextBeginResult_ = true;
+    nextBeginResult_ = success;
+    nextBeginFailureReason_ = reason;
+}
+
 bool MockWiFi::begin(const std::string& ssid, const std::string& password, int32_t channel) {
     if (ssid.empty()) {
         return false;
@@ -13,7 +19,25 @@ bool MockWiFi::begin(const std::string& ssid, const std::string& password, int32
     
     // Simulate connection delay
     simulateConnectionDelay(std::chrono::milliseconds(100));
-    
+
+    if (hasNextBeginResult_) {
+        bool ok = nextBeginResult_;
+        uint32_t reason = nextBeginFailureReason_;
+        hasNextBeginResult_ = false;
+
+        state_.ssid = ssid;
+        state_.password = password;
+
+        if (!ok) {
+            state_.connected = false;
+            state_.disconnectReason = reason;
+            status_ = ConnectionStatus::ERROR;
+            notifyEvent("WIFI_CONNECTION_FAILED");
+            notifyConnectionChange(false);
+            return false;
+        }
+    }
+
     // In real scenario, this would fail for invalid credentials
     // For testing, simulate successful connection
     state_.ssid = ssid;
@@ -84,6 +108,8 @@ bool MockWiFi::softAP(const std::string& ssid, const std::string& password, int3
 }
 
 bool MockWiFi::softAPDisconnect(bool wifiOff) {
+    (void)wifiOff;
+
     apMode_ = AccessPointMode::OFF;
     apConnectedClients_.clear();
     
@@ -100,6 +126,8 @@ void MockWiFi::setHostname(const std::string& hostname) {
 }
 
 void MockWiFi::setDNS(uint8_t dns_no, const std::string& dns1, const std::string& dns2) {
+    (void)dns2;
+
     if (dns_no == 0) {
         state_.dnsIP = dns1;
     }
@@ -107,6 +135,8 @@ void MockWiFi::setDNS(uint8_t dns_no, const std::string& dns1, const std::string
 }
 
 bool MockWiFi::config(const std::string& localIP, const std::string& gatewayIP, const std::string& subnetMask, const std::string& dns1, const std::string& dns2) {
+    (void)dns2;
+
     state_.localIP = localIP;
     state_.gatewayIP = gatewayIP;
     state_.subnetMask = subnetMask;
@@ -141,6 +171,8 @@ std::string MockWiFi::getDNSIP(uint8_t dns_no) const {
 }
 
 std::vector<MockWiFi::WiFiNetwork> MockWiFi::scanNetworks(bool async) {
+    (void)async;
+
     if (scanInProgress_) {
         return std::vector<WiFiNetwork>();
     }
@@ -217,6 +249,9 @@ void MockWiFi::simulateDisconnection(uint32_t reason) {
 }
 
 void MockWiFi::simulateConnectionFailure(const std::string& ssid, uint32_t reason) {
+    (void)ssid;
+    (void)reason;
+
     status_ = ConnectionStatus::ERROR;
     notifyEvent("WIFI_CONNECTION_FAILED");
 }
@@ -311,7 +346,6 @@ std::string MockWiFi::generateMockIP(const std::string& ssid) {
 }
 
 void MockWiFi::simulateConnectionDelay(const std::chrono::milliseconds& delay) {
-    // In real embedded testing, this would not block
-    // For desktop testing, we can simulate the delay
-    // For embedded UnitTest, this would be a no-op
+    (void)delay;
+    // In real embedded testing, this would not block.
 }

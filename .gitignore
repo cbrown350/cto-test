@@ -53,7 +53,6 @@ src_version.h
 # Compiled test executables
 *_test
 *_unittest
-test
 
 # Generated files
 AutoConfig.h

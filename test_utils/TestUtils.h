@@ -128,7 +128,12 @@ public:
     static void resetMemoryTracking();
     static size_t getMemoryAllocated();
     static bool hasMemoryLeaks();
-    
+
+    // Explicit allocation tracking (used for leak detection in unit tests).
+    // Note: this does not hook global new/delete; callers must use allocate()/deallocate().
+    static void* allocate(size_t size);
+    static void deallocate(void* pointer);
+
     // Buffer management
     static std::vector<uint8_t> createTestBuffer(size_t size, uint8_t fillValue = 0x00);
     static void fillBuffer(std::vector<uint8_t>& buffer, uint8_t fillValue = 0x00);

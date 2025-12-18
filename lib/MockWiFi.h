@@ -100,6 +100,7 @@ public:
     int32_t getSleepMode() const { return sleepMode_; }
     
     // Simulation methods for testing
+    void setNextBeginResult(bool success, uint32_t reason = 1);
     void simulateConnection(const std::string& ssid, const std::string& ip = "192.168.1.100");
     void simulateDisconnection(uint32_t reason = 1);
     void simulateConnectionFailure(const std::string& ssid, uint32_t reason = 1);
@@ -138,6 +139,11 @@ private:
     bool scanInProgress_ = false;
     std::vector<WiFiNetwork> availableNetworks_;
     uint32_t lastScanTime_ = 0;
+
+    // Begin() result control for deterministic tests
+    bool hasNextBeginResult_ = false;
+    bool nextBeginResult_ = true;
+    uint32_t nextBeginFailureReason_ = 1;
     
     // Access Point state
     std::string apSSID_;
