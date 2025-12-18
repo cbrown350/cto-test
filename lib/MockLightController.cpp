@@ -1,6 +1,11 @@
 #include "MockLightController.h"
+
 #include <algorithm>
 #include <cmath>
+
+std::chrono::steady_clock::time_point MockLightController::now() const {
+    return std::chrono::steady_clock::time_point(std::chrono::seconds(simulatedSeconds_));
+}
 
 void MockLightController::setConfig(const Config& config) {
     config_ = config;
@@ -63,6 +68,7 @@ void MockLightController::disable() {
     state_.isOn = false;
     state_.brightness = 0;
     state_.transitionActive = false;
+    sineWaveActive_ = false;
     mode_ = LightMode::DISABLED;
 }
 
@@ -74,32 +80,19 @@ void MockLightController::resetStatistics() {
 }
 
 void MockLightController::simulateTimeAdvance(std::chrono::seconds seconds) {
-    auto now = std::chrono::steady_clock::now();
-    auto timeDiff = now - lastTickTime_;
-    lastTickTime_ = now;
-    
-    // Simulate multiple ticks
-    auto tickCount = std::chrono::duration_cast<std::chrono::seconds>(timeDiff).count();
-    
-    for (int i = 0; i < tickCount; ++i) {
+    for (int i = 0; i < static_cast<int>(seconds.count()); ++i) {
         processTick();
     }
 }
 
 void MockLightController::processTick() {
-    auto now = std::chrono::steady_clock::now();
-    
-    // Initialize timing on first call
-    if (lastTickTime_.time_since_epoch().count() == 0) {
-        lastTickTime_ = now;
-        return;
-    }
-    
+    simulatedSeconds_++;
+
     updateTransition();
     updateSineWave();
     updateTiming();
-    
-    lastTickTime_ = now;
+
+    state_.lastStateChange = now();
 }
 
 void MockLightController::startTransition(uint8_t targetBrightness) {
@@ -117,9 +110,9 @@ void MockLightController::setManualOverride(bool override) {
 
 void MockLightController::startSineWaveTransition(uint32_t durationSeconds) {
     if (!config_.enableLight) return;
-    
+
     sineWaveActive_ = true;
-    sineWaveStartTime_ = std::chrono::steady_clock::now();
+    sineWaveStartTime_ = now();
     sineWaveDuration_ = durationSeconds;
 }
 
@@ -130,55 +123,44 @@ void MockLightController::stopSineWaveTransition() {
 void MockLightController::updateLightState() {
     bool oldOnState = state_.isOn;
     uint8_t oldBrightness = state_.brightness;
-    
+
     switch (mode_) {
         case LightMode::DISABLED:
             state_.isOn = false;
             state_.brightness = 0;
             break;
-            
+
         case LightMode::MANUAL_ON:
             state_.isOn = true;
             if (!state_.transitionActive) {
                 state_.brightness = manualBrightness_;
             }
             break;
-            
+
         case LightMode::MANUAL_OFF:
             state_.isOn = false;
             state_.brightness = 0;
             break;
-            
+
         case LightMode::AUTO:
             if (config_.enableSunriseSunset) {
-                // Calculate based on sunrise/sunset times
                 uint32_t currentTimeMinutes = currentHour_ * 60 + currentMinute_;
                 uint32_t sunriseMinutes = sunriseHour_ * 60 + sunriseMinute_;
                 uint32_t sunsetMinutes = sunsetHour_ * 60 + sunsetMinute_;
-                
+
                 state_.isOn = (currentTimeMinutes >= sunriseMinutes && currentTimeMinutes <= sunsetMinutes);
-                if (state_.isOn) {
-                    state_.brightness = config_.maxBrightness;
-                } else {
-                    state_.brightness = 0;
-                }
+                state_.brightness = state_.isOn ? config_.maxBrightness : 0;
             } else {
-                // Simple day/night based on configured hours
                 uint32_t currentTimeMinutes = currentHour_ * 60 + currentMinute_;
                 uint32_t dayStartMinutes = config_.dayStartHour * 60;
                 uint32_t dayEndMinutes = config_.dayEndHour * 60;
-                
+
                 state_.isOn = (currentTimeMinutes >= dayStartMinutes && currentTimeMinutes <= dayEndMinutes);
-                if (state_.isOn) {
-                    state_.brightness = config_.maxBrightness;
-                } else {
-                    state_.brightness = 0;
-                }
+                state_.brightness = state_.isOn ? config_.maxBrightness : 0;
             }
             break;
     }
-    
-    // Notify changes
+
     if (oldOnState != state_.isOn || oldBrightness != state_.brightness) {
         notifyStateChange();
         if (oldBrightness != state_.brightness) {
@@ -188,42 +170,51 @@ void MockLightController::updateLightState() {
 }
 
 void MockLightController::startBrightnessTransition(uint8_t targetBrightness) {
+    if (!config_.enableLight) {
+        return;
+    }
+
     if (targetBrightness > config_.maxBrightness) targetBrightness = config_.maxBrightness;
-    if (targetBrightness < config_.minBrightness) targetBrightness = config_.minBrightness;
-    
+    if (targetBrightness != 0 && targetBrightness < config_.minBrightness) targetBrightness = config_.minBrightness;
+
+    if (targetBrightness == state_.brightness) {
+        state_.transitionActive = false;
+        state_.transitionProgress = 1.0f;
+        return;
+    }
+
     state_.transitionActive = true;
     state_.transitionProgress = 0.0f;
     transitionStartBrightness_ = state_.brightness;
     transitionTargetBrightness_ = targetBrightness;
-    transitionStartTime_ = std::chrono::steady_clock::now();
-    
-    // Calculate duration based on brightness difference
-    uint8_t brightnessDiff = std::abs(static_cast<int>(targetBrightness) - static_cast<int>(state_.brightness));
-    transitionDuration_ = (brightnessDiff * config_.fadeInDuration) / 255;
+    transitionStartTime_ = now();
+
+    uint8_t brightnessDiff = static_cast<uint8_t>(std::abs(static_cast<int>(targetBrightness) - static_cast<int>(state_.brightness)));
+    uint32_t baseDuration = (targetBrightness >= state_.brightness) ? config_.fadeInDuration : config_.fadeOutDuration;
+
+    transitionDuration_ = std::max<uint32_t>(1, (brightnessDiff * baseDuration) / 255);
 }
 
 void MockLightController::updateTransition() {
     if (!state_.transitionActive) return;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - transitionStartTime_);
-    
-    float progress = static_cast<float>(elapsed.count()) / transitionDuration_;
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now() - transitionStartTime_);
+
+    float progress = static_cast<float>(elapsed.count()) / static_cast<float>(transitionDuration_);
     progress = std::max(0.0f, std::min(1.0f, progress));
-    
+
     state_.transitionProgress = progress;
-    
-    // Linear interpolation
+
     uint8_t newBrightness = static_cast<uint8_t>(
-        transitionStartBrightness_ + 
+        transitionStartBrightness_ +
         (transitionTargetBrightness_ - transitionStartBrightness_) * progress
     );
-    
+
     if (newBrightness != state_.brightness) {
         state_.brightness = newBrightness;
         notifyBrightnessChange(newBrightness);
     }
-    
+
     if (progress >= 1.0f) {
         state_.transitionActive = false;
         state_.transitionProgress = 1.0f;
@@ -233,21 +224,19 @@ void MockLightController::updateTransition() {
 
 void MockLightController::updateSineWave() {
     if (!sineWaveActive_) return;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - sineWaveStartTime_);
-    
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now() - sineWaveStartTime_);
+
     if (elapsed.count() >= static_cast<long>(sineWaveDuration_)) {
         sineWaveActive_ = false;
         return;
     }
-    
-    float progress = static_cast<float>(elapsed.count()) / sineWaveDuration_;
-    
-    // Sine wave: 0.5 * (1 + sin(2π * progress))
+
+    float progress = static_cast<float>(elapsed.count()) / static_cast<float>(std::max<uint32_t>(1, sineWaveDuration_));
+
     float sineValue = 0.5f * (1.0f + std::sin(2.0f * M_PI * progress));
     uint8_t newBrightness = static_cast<uint8_t>(sineValue * config_.maxBrightness);
-    
+
     if (newBrightness != state_.brightness) {
         state_.brightness = newBrightness;
         state_.isOn = (newBrightness > 0);

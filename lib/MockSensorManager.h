@@ -1,10 +1,11 @@
 #ifndef MOCK_SENSOR_MANAGER_H
 #define MOCK_SENSOR_MANAGER_H
 
-#include <vector>
-#include <memory>
-#include <functional>
 #include <chrono>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <vector>
 
 class MockSensorManager {
 public:
@@ -13,6 +14,11 @@ public:
         bool isValid;
         bool isWaterMeter;
         uint32_t pulseCount;
+
+        // Derived metrics for water meters
+        float flowRateGPM;
+        float totalGallons;
+
         std::chrono::steady_clock::time_point lastUpdate;
     };
 
@@ -35,7 +41,7 @@ public:
     void setTemperature(float temperature, int sensorIndex = 0);
     void setRandomTemperature(int sensorIndex = 0);
     void setGradientTemperature(float startTemp, float endTemp, int steps, int sensorIndex = 0);
-    
+
     // Water meter simulation
     void setPulseCount(uint32_t pulseCount, int sensorIndex = 0);
     void generatePulses(uint32_t pulseCount, int sensorIndex = 0);
@@ -52,7 +58,16 @@ public:
     bool isWaterMeterDetected(int sensorIndex = 0) const;
     SensorData getSensorData(int sensorIndex = 0) const;
     std::vector<SensorData> getAllSensorData() const;
-    
+
+    // Flow helpers
+    float getFlowRateGPM(int sensorIndex = 0) const;
+    float getTotalGallons(int sensorIndex = 0) const;
+    void resetFlowStatistics(int sensorIndex = -1);
+
+    // Time simulation
+    void processTick(std::chrono::milliseconds delta = std::chrono::milliseconds(100));
+    void simulateTimeAdvance(std::chrono::milliseconds total, std::chrono::milliseconds step = std::chrono::milliseconds(100));
+
     // Callback registration for real-time updates
     using DataCallback = std::function<void(const SensorData&, int)>;
     void setDataCallback(DataCallback callback, int sensorIndex = -1);
@@ -62,10 +77,17 @@ private:
     std::vector<SensorData> sensorData_;
     std::vector<bool> pulseGenerationActive_;
     std::vector<uint32_t> currentPulseRate_;
+    std::vector<float> pulseAccumulator_;
     std::vector<DataCallback> callbacks_;
-    
+
+    std::vector<uint32_t> lastPulseCount_;
+    std::vector<std::chrono::steady_clock::time_point> lastPulseTime_;
+
+    std::chrono::steady_clock::time_point currentTime_ = std::chrono::steady_clock::time_point{};
+
     void initializeSensors();
-    void updateSensorData(int sensorIndex);
+    void updateSensorData(int sensorIndex, std::chrono::milliseconds delta);
+    void updateFlowMetrics(int sensorIndex);
 };
 
 #endif // MOCK_SENSOR_MANAGER_H

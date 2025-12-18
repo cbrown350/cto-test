@@ -15,7 +15,6 @@ find_package(PkgConfig REQUIRED)
 # Find GoogleTest
 find_package(GTest CONFIG QUIET)
 if(NOT GTest_FOUND)
-    find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTest googletest)
 endif()
 
@@ -23,6 +22,13 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-missing-field-initializers -pthread")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
+# Optional coverage instrumentation
+option(COOP_ENABLE_COVERAGE "Enable coverage instrumentation flags" OFF)
+if(COOP_ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -O0 -g")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+endif()
 
 # Source files
 set(LIB_SOURCES
@@ -32,6 +38,9 @@ set(LIB_SOURCES
     lib/MockSettingsManager.cpp
     lib/MockWebServer.cpp
     lib/MockWiFi.cpp
+    lib/Logger.cpp
+    lib/WifiController.cpp
+    lib/SunriseSunset.cpp
 )
 
 set(TEST_UTILS_SOURCES
@@ -42,58 +51,101 @@ set(TEST_COMMON_SOURCES
     test/test_common/CommonTestFixture.cpp
 )
 
-set(TEST_DESKTOP_SOURCES
-    test/test_desktop/SensorManagerTest.cpp
-    test/test_desktop/PumpControllerTest.cpp
-    test/test_desktop/LightControllerTest.cpp
-)
+function(add_coop_test target sourceFile)
+    add_executable(${target}
+        ${TEST_COMMON_SOURCES}
+        ${TEST_UTILS_SOURCES}
+        ${LIB_SOURCES}
+        ${sourceFile}
+    )
+
+    target_include_directories(${target} PRIVATE lib test_utils test/test_common)
+
+    if(GTest_FOUND)
+        target_link_libraries(${target} PRIVATE GTest::gtest_main Threads::Threads)
+    elseif(GTest_LIBRARIES)
+        target_link_libraries(${target} PRIVATE ${GTest_LIBRARIES} Threads::Threads)
+    endif()
+endfunction()
 
 # Create test executables
-add_executable(sensor_manager_test ${TEST_COMMON_SOURCES} ${TEST_UTILS_SOURCES} ${LIB_SOURCES} test/test_desktop/SensorManagerTest.cpp)
-add_executable(pump_controller_test ${TEST_COMMON_SOURCES} ${TEST_UTILS_SOURCES} ${LIB_SOURCES} test/test_desktop/PumpControllerTest.cpp)
-add_executable(light_controller_test ${TEST_COMMON_SOURCES} ${TEST_UTILS_SOURCES} ${LIB_SOURCES} test/test_desktop/LightControllerTest.cpp)
-
-# Link libraries
-if(GTest_FOUND)
-    target_link_libraries(sensor_manager_test PRIVATE GTest::gtest_main GTest::gmock_main)
-    target_link_libraries(pump_controller_test PRIVATE GTest::gtest_main GTest::gmock_main)
-    target_link_libraries(light_controller_test PRIVATE GTest::gtest_main GTest::gmock_main)
-elseif(GTest_LIBRARIES)
-    target_link_libraries(sensor_manager_test PRIVATE ${GTest_LIBRARIES} Threads::Threads)
-    target_link_libraries(pump_controller_test PRIVATE ${GTest_LIBRARIES} Threads::Threads)
-    target_link_libraries(light_controller_test PRIVATE ${GTest_LIBRARIES} Threads::Threads)
-endif()
-
-# Include directories
-target_include_directories(sensor_manager_test PRIVATE lib test_utils test/test_common)
-target_include_directories(pump_controller_test PRIVATE lib test_utils test/test_common)
-target_include_directories(light_controller_test PRIVATE lib test_utils test/test_common)
+add_coop_test(sensor_manager_test test/test_desktop/test_sensor_manager.cpp)
+add_coop_test(pump_controller_test test/test_desktop/test_pump_controller.cpp)
+add_coop_test(light_controller_test test/test_desktop/test_light_controller.cpp)
+add_coop_test(settings_manager_test test/test_desktop/test_settings_manager.cpp)
+add_coop_test(logger_test test/test_desktop/test_logger.cpp)
+add_coop_test(wifi_controller_test test/test_desktop/test_wifi_controller.cpp)
+add_coop_test(sunrise_sunset_test test/test_desktop/test_sunrise_sunset.cpp)
 
 # Add test targets
 add_test(NAME SensorManagerTest COMMAND sensor_manager_test)
 add_test(NAME PumpControllerTest COMMAND pump_controller_test)
 add_test(NAME LightControllerTest COMMAND light_controller_test)
+add_test(NAME SettingsManagerTest COMMAND settings_manager_test)
+add_test(NAME LoggerTest COMMAND logger_test)
+add_test(NAME WifiControllerTest COMMAND wifi_controller_test)
+add_test(NAME SunriseSunsetTest COMMAND sunrise_sunset_test)
 
 # Custom test target
 add_custom_target(test
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS sensor_manager_test pump_controller_test light_controller_test
+    DEPENDS
+        sensor_manager_test
+        pump_controller_test
+        light_controller_test
+        settings_manager_test
+        logger_test
+        wifi_controller_test
+        sunrise_sunset_test
 )
 
 # Coverage target
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_custom_target(coverage
-        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-        COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/lib/*.cpp
-        COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test_utils/*.cpp
-        COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test/test_common/*.cpp
-        COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test/test_desktop/*.cpp
-        DEPENDS sensor_manager_test pump_controller_test light_controller_test
-        COMMENT "Generating code coverage report"
-    )
+    find_program(GCOVR_EXECUTABLE gcovr)
+
+    if(GCOVR_EXECUTABLE)
+        add_custom_target(coverage
+            COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+            COMMAND ${GCOVR_EXECUTABLE} -r ${CMAKE_CURRENT_SOURCE_DIR} --exclude-directories ".*/_deps" --html --html-details -o coverage/index.html
+            COMMAND ${GCOVR_EXECUTABLE} -r ${CMAKE_CURRENT_SOURCE_DIR} --exclude-directories ".*/_deps" --print-summary
+            DEPENDS
+                sensor_manager_test
+                pump_controller_test
+                light_controller_test
+                settings_manager_test
+                logger_test
+                wifi_controller_test
+                sunrise_sunset_test
+            COMMENT "Generating code coverage report (coverage/index.html)"
+        )
+    else()
+        add_custom_target(coverage
+            COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+            COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/lib/*.cpp
+            COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test_utils/*.cpp
+            COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test/test_common/*.cpp
+            COMMAND gcov ${CMAKE_CURRENT_SOURCE_DIR}/test/test_desktop/*.cpp
+            DEPENDS
+                sensor_manager_test
+                pump_controller_test
+                light_controller_test
+                settings_manager_test
+                logger_test
+                wifi_controller_test
+                sunrise_sunset_test
+            COMMENT "Generating code coverage report"
+        )
+    endif()
 endif()
 
 # Install target
-install(TARGETS sensor_manager_test pump_controller_test light_controller_test
+install(TARGETS
+    sensor_manager_test
+    pump_controller_test
+    light_controller_test
+    settings_manager_test
+    logger_test
+    wifi_controller_test
+    sunrise_sunset_test
     RUNTIME DESTINATION bin
 )

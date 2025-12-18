@@ -1,23 +1,26 @@
 #include "MockPumpController.h"
+
 #include <algorithm>
-#include <cmath>
-#include <string>
 
 void MockPumpController::setConfig(const Config& config) {
     config_ = config;
-    resetFault();
+
+    state_.isEnabled = config_.enablePump;
+    clearFault();
 }
 
 void MockPumpController::setMode(PumpMode mode) {
     PumpMode oldMode = mode_;
     mode_ = mode;
-    
+
     if (oldMode != mode_) {
-        // Reset accumulated times when mode changes
-        accumulatedOnTime_ = std::chrono::seconds(state_.onTime);
-        accumulatedOffTime_ = std::chrono::seconds(state_.offTime);
+        // Reset cycle phase on mode changes for deterministic testing.
+        autoPhase_ = AutoPhase::OFF;
+        freezeActive_ = false;
+        phaseElapsedSeconds_ = 0;
+        continuousOnSeconds_ = 0;
     }
-    
+
     updatePumpState();
 }
 
@@ -29,15 +32,11 @@ void MockPumpController::setManualState(bool state) {
 }
 
 void MockPumpController::setTemperature(float temperature) {
-    // Store temperature for logic, but pump state updates through processTick()
-    if (mode_ == PumpMode::AUTO && config_.autoMode) {
-        // Logic will be evaluated in processTick()
-    }
+    state_.currentTemperature = temperature;
 }
 
 void MockPumpController::setFlowPulses(uint32_t pulseCount) {
     state_.totalPulses = pulseCount;
-    lastFlowTime_ = std::chrono::steady_clock::now();
 }
 
 void MockPumpController::enable() {
@@ -51,55 +50,57 @@ void MockPumpController::disable() {
     updatePumpState();
 }
 
+void MockPumpController::clearFault() {
+    state_.faultDetected = false;
+    secondsSinceLastPulse_ = 0;
+    pulsesThisMinute_ = 0;
+    secondsInMinute_ = 0;
+    continuousOnSeconds_ = 0;
+}
+
 void MockPumpController::resetStatistics() {
     state_.onTime = 0;
     state_.offTime = 0;
     state_.cycleCount = 0;
     state_.totalPulses = 0;
-    accumulatedOnTime_ = std::chrono::seconds{0};
-    accumulatedOffTime_ = std::chrono::seconds{0};
+    state_.flowRate = 0.0f;
+
+    phaseElapsedSeconds_ = 0;
+    continuousOnSeconds_ = 0;
+
+    secondsSinceLastPulse_ = 0;
+    pulsesThisMinute_ = 0;
+    secondsInMinute_ = 0;
     lastPulseCount_ = 0;
 }
 
 void MockPumpController::simulateTimeAdvance(std::chrono::seconds seconds) {
-    auto now = std::chrono::steady_clock::now();
-    auto timeDiff = now - lastTickTime_;
-    lastTickTime_ = now;
-    
-    // Simulate multiple ticks
-    auto tickInterval = std::chrono::seconds{1};
-    auto tickCount = std::chrono::duration_cast<std::chrono::seconds>(timeDiff).count();
-    
-    for (int i = 0; i < tickCount; ++i) {
+    for (int i = 0; i < static_cast<int>(seconds.count()); ++i) {
         processTick();
     }
 }
 
+std::chrono::steady_clock::time_point MockPumpController::now() const {
+    return std::chrono::steady_clock::time_point(std::chrono::seconds(simulatedSeconds_));
+}
+
 void MockPumpController::processTick() {
-    auto now = std::chrono::steady_clock::now();
-    
-    // Initialize timing on first call
-    if (lastTickTime_.time_since_epoch().count() == 0) {
-        lastTickTime_ = now;
-        lastFlowTime_ = now;
-        return;
-    }
-    
+    simulatedSeconds_++;
+
+    updateFlowState();
     updatePumpState();
     checkForFaults();
-    
-    // Update timing
+
+    // Update timing statistics
     if (state_.isActive) {
-        accumulatedOnTime_ += std::chrono::seconds{1};
+        state_.onTime++;
+        continuousOnSeconds_++;
     } else {
-        accumulatedOffTime_ += std::chrono::seconds{1};
+        state_.offTime++;
+        continuousOnSeconds_ = 0;
     }
-    
-    state_.onTime = std::chrono::duration_cast<std::chrono::seconds>(accumulatedOnTime_).count();
-    state_.offTime = std::chrono::duration_cast<std::chrono::seconds>(accumulatedOffTime_).count();
-    state_.lastStateChange = now;
-    
-    lastTickTime_ = now;
+
+    state_.lastStateChange = now();
 }
 
 void MockPumpController::setStateChangeCallback(StateChangeCallback callback) {
@@ -110,39 +111,121 @@ void MockPumpController::setFaultCallback(FaultCallback callback) {
     faultCallback_ = callback;
 }
 
+void MockPumpController::updateFlowState() {
+    // Update flow info based on pulse deltas per second.
+    uint32_t currentPulses = state_.totalPulses;
+    uint32_t deltaPulses = currentPulses - lastPulseCount_;
+
+    if (deltaPulses > 0) {
+        secondsSinceLastPulse_ = 0;
+        pulsesThisMinute_ += deltaPulses;
+
+        if (config_.pulsesPerGallon > 0) {
+            float gallonsThisSecond = static_cast<float>(deltaPulses) / static_cast<float>(config_.pulsesPerGallon);
+            state_.flowRate = gallonsThisSecond * 60.0f;
+        }
+    } else {
+        secondsSinceLastPulse_++;
+        state_.flowRate = 0.0f;
+    }
+
+    lastPulseCount_ = currentPulses;
+
+    secondsInMinute_++;
+    if (secondsInMinute_ >= 60) {
+        // Evaluate minimum pulse expectations every minute.
+        if (state_.isActive && config_.minPulsesPerMinute > 0 && pulsesThisMinute_ < config_.minPulsesPerMinute) {
+            if (!state_.faultDetected) {
+                state_.faultDetected = true;
+                notifyFault("Insufficient flow");
+            }
+        }
+
+        secondsInMinute_ = 0;
+        pulsesThisMinute_ = 0;
+    }
+}
+
 void MockPumpController::updatePumpState() {
     bool oldActive = state_.isActive;
-    
-    switch (mode_) {
-        case PumpMode::DISABLED:
-            state_.isActive = false;
-            break;
-            
-        case PumpMode::MANUAL_ON:
-            state_.isActive = state_.isEnabled && manualState_;
-            break;
-            
-        case PumpMode::MANUAL_OFF:
-            state_.isActive = false;
-            break;
-            
-        case PumpMode::AUTO:
-            if (!state_.isEnabled || !config_.autoMode) {
+
+    if (state_.faultDetected) {
+        state_.isActive = false;
+        autoPhase_ = AutoPhase::OFF;
+        freezeActive_ = false;
+        phaseElapsedSeconds_ = 0;
+    } else {
+        switch (mode_) {
+            case PumpMode::DISABLED:
                 state_.isActive = false;
-            } else {
-                // Simple freeze protection logic
-                // This would normally use temperature from sensors
-                state_.isActive = true; // Simplified for mock
-                
-                // Check timing constraints
-                if (state_.onTime >= config_.maxOnTime) {
-                    state_.isActive = false; // Force off after max time
+                break;
+
+            case PumpMode::MANUAL_ON:
+                state_.isActive = state_.isEnabled && manualState_;
+                break;
+
+            case PumpMode::MANUAL_OFF:
+                state_.isActive = false;
+                break;
+
+            case PumpMode::AUTO: {
+                if (!state_.isEnabled || !config_.autoMode) {
+                    state_.isActive = false;
+                    autoPhase_ = AutoPhase::OFF;
+                    freezeActive_ = false;
+                    phaseElapsedSeconds_ = 0;
+                    break;
                 }
+
+                // Freeze detection with hysteresis.
+                const float startTemp = config_.freezeThreshold;
+                const float stopTemp = config_.freezeThreshold + config_.freezeHysteresis;
+
+                if (!freezeActive_ && state_.currentTemperature <= startTemp) {
+                    freezeActive_ = true;
+                    autoPhase_ = AutoPhase::ON;
+                    phaseElapsedSeconds_ = 0;
+                } else if (freezeActive_ && state_.currentTemperature > stopTemp) {
+                    freezeActive_ = false;
+                    autoPhase_ = AutoPhase::OFF;
+                    phaseElapsedSeconds_ = 0;
+                }
+
+                if (!freezeActive_) {
+                    state_.isActive = false;
+                    break;
+                }
+
+                // Freeze protection cycling state machine.
+                phaseElapsedSeconds_++;
+
+                if (autoPhase_ == AutoPhase::ON) {
+                    state_.isActive = true;
+                    if (phaseElapsedSeconds_ >= std::max<uint32_t>(1, config_.onDuration)) {
+                        autoPhase_ = AutoPhase::OFF;
+                        phaseElapsedSeconds_ = 0;
+                    }
+                } else {
+                    state_.isActive = false;
+                    if (phaseElapsedSeconds_ >= std::max<uint32_t>(1, config_.offDuration)) {
+                        autoPhase_ = AutoPhase::ON;
+                        phaseElapsedSeconds_ = 0;
+                    }
+                }
+                break;
             }
-            break;
+        }
+
+        // Hard safety cutoff
+        if (state_.isActive && continuousOnSeconds_ >= config_.maxOnTime) {
+            state_.isActive = false;
+            if (!state_.faultDetected) {
+                state_.faultDetected = true;
+                notifyFault("Excessive runtime");
+            }
+        }
     }
-    
-    // Notify state changes
+
     if (oldActive != state_.isActive) {
         if (state_.isActive) {
             state_.cycleCount++;
@@ -152,28 +235,17 @@ void MockPumpController::updatePumpState() {
 }
 
 void MockPumpController::checkForFaults() {
-    auto now = std::chrono::steady_clock::now();
-    
-    // Check for flow fault (no pulses for fault timeout)
-    auto timeSinceFlow = now - lastFlowTime_;
-    if (std::chrono::duration_cast<std::chrono::seconds>(timeSinceFlow).count() > config_.faultTimeout) {
-        if (!state_.faultDetected) {
-            state_.faultDetected = true;
-            notifyFault(std::string("No flow detected"));
-        }
+    if (!state_.isActive) {
+        return;
     }
-    
-    // Check for excessive runtime
-    if (state_.onTime > config_.maxOnTime && state_.isActive) {
-        if (!state_.faultDetected) {
-            state_.faultDetected = true;
-            notifyFault(std::string("Excessive runtime"));
-        }
-    }
-}
 
-void MockPumpController::resetFault() {
-    state_.faultDetected = false;
+    if (config_.faultTimeout > 0 && secondsSinceLastPulse_ >= config_.faultTimeout) {
+        if (!state_.faultDetected) {
+            state_.faultDetected = true;
+            state_.isActive = false;
+            notifyFault("No flow detected");
+        }
+    }
 }
 
 void MockPumpController::notifyStateChange(bool oldActive) {
