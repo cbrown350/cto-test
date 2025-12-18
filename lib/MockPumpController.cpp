@@ -198,18 +198,22 @@ void MockPumpController::updatePumpState() {
 
                 // Freeze protection cycling state machine.
                 phaseElapsedSeconds_++;
-
+                
                 if (autoPhase_ == AutoPhase::ON) {
-                    state_.isActive = true;
-                    if (phaseElapsedSeconds_ >= std::max<uint32_t>(1, config_.onDuration)) {
+                    if (phaseElapsedSeconds_ > config_.onDuration) {
                         autoPhase_ = AutoPhase::OFF;
                         phaseElapsedSeconds_ = 0;
+                        state_.isActive = false;
+                    } else {
+                        state_.isActive = true;
                     }
                 } else {
-                    state_.isActive = false;
-                    if (phaseElapsedSeconds_ >= std::max<uint32_t>(1, config_.offDuration)) {
+                    if (phaseElapsedSeconds_ > config_.offDuration) {
                         autoPhase_ = AutoPhase::ON;
                         phaseElapsedSeconds_ = 0;
+                        state_.isActive = true;
+                    } else {
+                        state_.isActive = false;
                     }
                 }
                 break;

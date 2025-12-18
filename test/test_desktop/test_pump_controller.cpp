@@ -19,7 +19,7 @@ protected:
         cfg.onDuration = 5;
         cfg.offDuration = 5;
         cfg.maxOnTime = 30;
-        cfg.faultTimeout = 3;
+        cfg.faultTimeout = 0;  // Disable flow fault for basic tests
         cfg.minPulsesPerMinute = 0;
         cfg.pulsesPerGallon = 1000;
         cfg.autoMode = true;
@@ -126,6 +126,11 @@ TEST_F(PumpControllerTest, DisabledModeForcesPumpOff) {
 }
 
 TEST_F(PumpControllerTest, NoFlowFaultTriggersAfterTimeout) {
+    // Re-enable fault timeout for this test
+    MockPumpController::Config cfg = pump.getConfig();
+    cfg.faultTimeout = 3;
+    pump.setConfig(cfg);
+    
     pump.setTemperature(0.0f);
 
     // Edge: with no flow pulses, faultTimeout seconds triggers a fault.
@@ -136,6 +141,11 @@ TEST_F(PumpControllerTest, NoFlowFaultTriggersAfterTimeout) {
 }
 
 TEST_F(PumpControllerTest, FaultCallbackInvokedOnNoFlow) {
+    // Re-enable fault timeout for this test
+    MockPumpController::Config cfg = pump.getConfig();
+    cfg.faultTimeout = 3;
+    pump.setConfig(cfg);
+    
     pump.setTemperature(0.0f);
 
     std::string fault;
@@ -148,6 +158,11 @@ TEST_F(PumpControllerTest, FaultCallbackInvokedOnNoFlow) {
 }
 
 TEST_F(PumpControllerTest, ClearFaultAllowsPumpToRunAgain) {
+    // Re-enable fault timeout for this test
+    MockPumpController::Config cfg = pump.getConfig();
+    cfg.faultTimeout = 3;
+    pump.setConfig(cfg);
+    
     pump.setTemperature(0.0f);
     pump.simulateTimeAdvance(std::chrono::seconds(5));
     ASSERT_TRUE(pump.isInFault());
